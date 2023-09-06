@@ -1,11 +1,11 @@
-# Keycloak Extension - Custom Event Listener
+# Keycloak 20.0.5 Extension - Custom Event Listener
 
-"User create" and "register" events, listen and Call Rest API with Java
+"User create" and "register" events, add to group if exists based on email domain
 
 
 ### Clone :
 ```shell
-git clone https://github.com/cevheri/keycloak-custom-event-listener
+git clone https://github.com/bseptember/keycloak-custom-event-listener
 
 cd keycloak-custom-event-listener
 ```
@@ -15,34 +15,23 @@ cd keycloak-custom-event-listener
 mvn clean package
 ```
 
-### Attach keycloak dockerVolume (already in docker-compose file)
+### Attach keycloak dockerVolume
 ```yaml
     volumes:
-      - ../../../target/custom-event-listener.jar://opt/jboss/keycloak/standalone/deployments/custom-event-listener.jar
-```
-
-
-### Run on Docker:
-```shell
-docker-compose -f src/main/docker/docker-compose.yml up -d
+      - /path/to/keycloak-custom-listener/target/custom-event-listener.jar:/opt/keycloak/custom-event-listener.jar
 ```
 
 ### Test :
 #### First
-![](files/event-configuration.png)
+![](files/event-config.png)
 
 
 #### Then
-![](files/create-new-user.png)
+![](files/create-user.png)
 
 ### Test Result on MockAPI: 
 #### Setup Mock API
-![](files/mockapi-view-api.png)
+![](files/group-view-api.png)
 
 #### View api result
-![](files/mockapi-view-user.png)
-
-### Stop Docker:
-```shell
-docker-compose -f src/main/docker/docker-compose.yml down
-```
+![](files/member-view-user.png)

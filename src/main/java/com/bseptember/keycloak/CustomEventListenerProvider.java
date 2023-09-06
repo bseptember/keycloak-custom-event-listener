@@ -1,4 +1,4 @@
-package com.cevher.keycloak;
+package com.bseptember.keycloak;
 
 import org.jboss.logging.Logger;
 import org.keycloak.events.Event;
@@ -7,12 +7,11 @@ import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.events.admin.ResourceType;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.RealmProvider;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
 
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class CustomEventListenerProvider
         implements EventListenerProvider {
@@ -35,16 +34,18 @@ public class CustomEventListenerProvider
 
         if (EventType.REGISTER.equals(event.getType())) {
 
-            event.getDetails().forEach((key, value) -> log.debugf("%s : %s",key, value));
+            event.getDetails().forEach((key, value) -> log.debugf("%s : %s", key, value));
 
             RealmModel realm = this.model.getRealm(event.getRealmId());
-            UserModel user = this.session.users().getUserById(event.getUserId(), realm);
-            sendUserData(user);
+
+            // Use UserProvider to get the user by ID
+            UserProvider userProvider = session.users();
+            UserModel user = userProvider.getUserById(realm, event.getUserId());
+
+            // Add user to group if it exists
+            addToGroup(user);
         }
-
     }
-
-
 
     @Override
     public void onEvent(AdminEvent adminEvent, boolean b) {
@@ -56,26 +57,61 @@ public class CustomEventListenerProvider
         if (ResourceType.USER.equals(adminEvent.getResourceType())
                 && OperationType.CREATE.equals(adminEvent.getOperationType())) {
             RealmModel realm = this.model.getRealm(adminEvent.getRealmId());
-            UserModel user = this.session.users().getUserById(adminEvent.getResourcePath().substring(6), realm);
 
-            sendUserData(user);
+            // Use UserProvider to get the user by ID
+            UserProvider userProvider = session.users();
+            UserModel user = userProvider.getUserById(realm, adminEvent.getResourcePath().substring(6));
+
+            // Add user to group if it exists
+            addToGroup(user);
         }
     }
-    private void sendUserData(UserModel user) {
-        String data =
-                "{\"id\": " + user.getId() + "\"," +
-                        "{\"email\": " + user.getEmail() + "\"," +
-                        "\"userName\":\"" + user.getUsername() + "\"," +
-                        "\"firstName\":\"" + user.getFirstName() + "\"," +
-                        "\"lastName\":\"" + user.getLastName() + "\"," +
-                        "}";
+
+    private void addToGroup(UserModel user) {
         try {
-            Client.postService(data);
-            log.debug("A new user has been created and post API");
+            // Extract the domain from the user's email address
+            String email = user.getEmail();
+            if (email != null) {
+                int atIndex = email.indexOf('@');
+                if (atIndex != -1) {
+                    String domain = email.substring(atIndex + 1);
+
+                    // Check if the group exists
+                    RealmModel realm = session.getContext().getRealm();
+                    String groupName = domain.toLowerCase(); // Group name based on domain
+
+                    boolean groupExists = false;
+                    GroupModel targetGroup = null;
+
+                    // Check if the group already exists
+                    Stream<GroupModel> groupStream = realm.getGroupsStream();
+                    for (GroupModel group : groupStream.collect(Collectors.toList())) {
+                        if (groupName.equalsIgnoreCase(group.getName())) {
+                            groupExists = true;
+                            targetGroup = group;
+                            break;
+                        }
+                    }
+
+                    //Comment out the following statement if you only want users to be added to manually created groups
+                    // If the group doesn't exist, create it
+                    if (!groupExists) {
+                        targetGroup = realm.createGroup(groupName);
+                        targetGroup.setName(groupName);
+                    }
+
+                    // If the group exists, add user to it
+                    if (groupExists) {
+                        user.joinGroup(targetGroup); // Add the user to the group
+                        log.debugf("User %s added to group %s", user.getUsername(), groupName);
+                    }
+                }
+            }
         } catch (Exception e) {
-            log.errorf("Failed to call API: %s", e);
+            log.errorf("Failed to add user to group: %s", e);
         }
     }
+
     @Override
     public void close() {}
 
@@ -121,7 +157,7 @@ public class CustomEventListenerProvider
         RealmModel realm = this.model.getRealm(event.getRealmId());
 
         UserModel newRegisteredUser =
-                this.session.users().getUserById(event.getAuthDetails().getUserId(), realm);
+                this.session.users().getUserById(realm, event.getAuthDetails().getUserId());
 
 
         StringBuilder sb = new StringBuilder();
